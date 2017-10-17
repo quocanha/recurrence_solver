@@ -1,4 +1,4 @@
-#README
+# README
 This project is done as a homework assignment for the course NWI-IBC016 
 Combinatorics taught by the Radboud University.
 
