@@ -1,4 +1,4 @@
-from abc import ABC
+from abc import ABC, abstractmethod
 
 
 class Token(ABC):
@@ -6,9 +6,11 @@ class Token(ABC):
         self.expression = expression
 
     @property
+    @abstractmethod
     def leftbp(self):
         raise NotImplementedError()
 
     @property
+    @abstractmethod
     def slug(self):
         raise NotImplementedError()

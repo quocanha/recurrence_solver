@@ -2,9 +2,10 @@ from .token import Token
 from abc import abstractmethod
 
 
-class Atom(Token):
+class Function(Token):
 
-    value = None
+    name = None
+    first = None
 
     @property
     @abstractmethod
@@ -18,11 +19,13 @@ class Atom(Token):
 
     @property
     @abstractmethod
-    def value(self):
+    def name(self):
         raise NotImplementedError()
 
     def nud(self):
+        self.first = self.expression.parse()
+        self.expression.advance(")")
         return self
 
     def __repr__(self):
-        return "(%s %s)" % (self.slug, self.value)
+        return "(Function %s (%s))" % (self.name, self.first)

@@ -2,9 +2,7 @@ from .token import Token
 from abc import abstractmethod
 
 
-class Atom(Token):
-
-    value = None
+class Variable(Token):
 
     @property
     @abstractmethod
@@ -16,13 +14,8 @@ class Atom(Token):
     def leftbp(self):
         raise NotImplementedError()
 
-    @property
-    @abstractmethod
-    def value(self):
-        raise NotImplementedError()
-
     def nud(self):
         return self
 
     def __repr__(self):
-        return "(%s %s)" % (self.slug, self.value)
+        return "(Variable %s)" % self.slug

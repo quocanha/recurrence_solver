@@ -1,6 +1,7 @@
 from input.input import Input
 from solver.solver import Solver
 from parser.expression import Expression
+from sympy import *
 
 
 class Main:
@@ -25,11 +26,16 @@ class Main:
     def topdown(self):
         recurrences = self.input.recurrences
         for recurrence in recurrences:
-            # expr = Expression(recurrences[recurrence].recurrence)
-            recurrences[recurrence].print()
-            expr = Expression("1 + 2 * 3 / 4 ^ 5 ^ -5")
-            print(expr.parse())
-            print("")
+            recurrence = recurrences[recurrence]
+            recurrence.print()
+            expr = Expression(recurrence.recurrence)
+            tree = expr.parse()
+            print(tree)
+            print()
+
+    def smpy(self):
+        exp = sympify("-4*s( n-2) + 4* s ( n-1)")
+        print(exp)
 
     def print(self):
         """ """

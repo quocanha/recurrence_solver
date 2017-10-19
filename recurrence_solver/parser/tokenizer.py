@@ -4,15 +4,27 @@ from .tokens import *
 
 class Tokenizer:
 
-    pattern = re.compile("\s*(?:(\d+)|([a-zA-Z]+)|([+\-*/^]))")
+    pattern = re.compile(
+        "\s*(?:(\d+)|([a-zA-Z](?!\())|([+\-=*/^()])|([a-zA-Z]\())")
+    #      (literal)-(variable      )-(operator   )-(function   )
+    antipattern = re.compile(
+        "(?![\s+]|[\d+]|[a-zA-Z](?!\()|[+\-=*/^()]|[a-zA-Z]\()(.)")
+    #         (literal ,variable      ,operator   , function    )
+
     symbols = {}
 
     def __init__(self, expression):
         self.expression = expression
 
-        self.create_atom("end")
-        self.create_atom("literal").nud = lambda self: self
+        # Pre defined classes.
+        self.symbols["("] = ParenthesisOpen
+        self.symbols[")"] = ParenthesisClose
+        self.symbols["literal"] = Literal
 
+        # End symbol
+        self.create_atom("end")
+
+        # Mathematical operators.
         self.create_infix("+", 10)
         self.create_infix("-", 10)
 
@@ -24,6 +36,8 @@ class Tokenizer:
 
         self.create_infix_r("^", 30)
 
+        self.create_infix("=", 1000)
+
     def tokenize(self, raw):
         """
         Returns a generator for the tokens corresponding to the equation. Uses
@@ -33,18 +47,39 @@ class Tokenizer:
         :return: A generator for the stream of tokens corresponding to the
                  equation.
         """
+        anti = self.antipattern.search(raw)
+        if anti:
+            raise SyntaxError(
+                "Invalid character(%s) at %s in %s" % (
+                    anti.group(0), anti.span(0)[0], anti.string))
+
         matches = self.pattern.findall(raw)
-        for lit, var, op in matches:
+        for lit, var, op, fn in matches:
             if lit:
                 symbol = self.symbols["literal"]
                 tokn = symbol(self.expression)
                 tokn.value = lit
                 yield tokn
+            elif var:
+                try:
+                    symbol = self.symbols[var]
+                except KeyError:
+                    symbol = self.create_variable(var)
+                tokn = symbol(self.expression)
+                yield tokn
             elif op:
-                symbol = self.symbols.get(op)
-                if not symbol:
+                try:
+                    symbol = self.symbols[op]
+                except KeyError:
                     raise SyntaxError("Invalid operator (%s)" % op)
-                # IDE says symbol is not callable, however it is.
+                else:
+                    tokn = symbol(self.expression)
+                    yield tokn
+            elif fn:
+                try:
+                    symbol = self.symbols[fn]
+                except KeyError:
+                    symbol = self.create_function(fn)
                 tokn = symbol(self.expression)
                 yield tokn
         symbol = self.symbols["end"]
@@ -70,7 +105,7 @@ class Tokenizer:
             symbol = symbol_type
             symbol.slug = slug
             symbol.leftbp = leftbp
-            symbol.__name__ = "symbol-" + slug
+            symbol.__name__ = "symbol-" + str(slug)
 
             # Create a new factory if it doesn't exist.
             self.symbols[slug] = symbol
@@ -79,6 +114,46 @@ class Tokenizer:
     """
     Symbol create helpers.
     """
+
+    def create_variable(self, slug):
+        """
+        Creates a variable symbol.
+        :param slug:
+        :return:
+        """
+        class var(Variable):
+            """
+            Placeholder class to circumvent the abstractmethod requirement
+            of the abstract functions of the Atom class, since we are
+            setting it dynamically.
+            """
+            name = None
+            slug = None
+            leftbp = None
+            pass
+
+        return self.create_symbol(var, slug, 0)
+
+    def create_function(self, slug):
+        """
+        Creates a function symbol.
+        :param slug:
+        :return:
+        """
+        class fn(Function):
+            """
+            Placeholder class to circumvent the abstractmethod requirement
+            of the abstract functions of the Atom class, since we are
+            setting it dynamically.
+            """
+            name = None
+            slug = None
+            leftbp = None
+            pass
+
+        s = self.create_symbol(fn, slug, 0)
+        s.name = slug[0]
+        return s
 
     def create_atom(self, slug, leftbp=0):
         """

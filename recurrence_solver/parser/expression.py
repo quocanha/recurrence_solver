@@ -50,6 +50,7 @@ class Expression:
     next_token = None
 
     def __init__(self, raw):
+        self.raw = raw
         tokenizer = Tokenizer(self)
         generator = tokenizer.tokenize(raw)
         self.next = generator.__next__
@@ -72,3 +73,8 @@ class Expression:
             left = current_token.led(left)
 
         return left
+
+    def advance(self, slug=None):
+        if slug and self.next_token.slug != slug:
+            raise SyntaxError("Expected %r" % slug)
+        self.next_token = self.next()
