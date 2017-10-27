@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from os import listdir
 from os.path import isfile, join
 
@@ -9,7 +10,7 @@ class Input:
 
     def __init__(self, path):
         self.path = path
-        self.recurrences = {}
+        self.recurrences = OrderedDict()
 
         self.readfiles()
 
@@ -23,6 +24,6 @@ class Input:
             for line in temp.readlines():
                 raw += line.rstrip()
 
-            self.recurrences[file] = Recurrence(raw)
+            self.recurrences[self.path + "/" + file] = Recurrence(raw, file)
 
 
