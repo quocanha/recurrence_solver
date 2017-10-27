@@ -28,7 +28,7 @@ class Main:
         """ """
         self.menu.welcome()
         # selection = self.menu.input(self.input.recurrences)
-        selection = 3
+        selection = 0
 
         if selection == 0:
             self.queue = self.input.recurrences

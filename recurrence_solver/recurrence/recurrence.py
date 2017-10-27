@@ -14,6 +14,8 @@ class Recurrence:
     nonhomo = []
     initials = {}
 
+    solution = None
+
     def __init__(self, raw, filename=""):
         self.filename = filename
         self.raw = raw
@@ -23,6 +25,7 @@ class Recurrence:
         self.homo = []
         self.nonhomo = []
         self.parse()
+        self.solution = None
 
     def parse(self):
         """
@@ -65,229 +68,281 @@ class Recurrence:
             alphas = self.solve_alphas(homogeneous)
             solution = self.sub_alphas(homogeneous, alphas)
             print(solution)
+            self.solution = solution
             return solution
         else:
             print("\tFound inhomogeneous part.")
 
             solved = False
-            particular_solution = None
+            solution = None
 
-            # First try to solve it with splitting every fn.
+            print("\tTrying to solve while splitting all fn's.")
+            fn_s = self.get_linear_parts_fn(False, True)
+
             try:
-                general_nonhomo, t = self.general_nonhomo_sequence(
-                    facts, False, True)
-                particular_solution = self.solve_theorem_6(general_nonhomo, t)
-            except ArithmeticError as e:
-                print("\tFailed attempt 1 of theorem 6.")
+                solution = self.solve_theorem6(fn_s, facts)
+            except ArithmeticError:
+                print("\t\tFailed to apply theorem 6.")
                 pass
             else:
-                print("\tTheorem 6!:")
-                print("\tNonhomogeneous solution:")
-                print("\t\t{}".format(general_nonhomo))
-                print("\tParticular solution:")
-                print("\t\t{}".format(particular_solution))
                 solved = True
 
             if not solved:
-                # Then try again without splitting every fn.
                 try:
-                    general_nonhomo, t = self.general_nonhomo_sequence(
-                        facts, False, False)
-                    particular_solution = self.solve_theorem_6(general_nonhomo, t)
-                except ArithmeticError as e:
-                    print("\tFailed attempt 2 of theorem 6.")
+                    solution = self.solve_guesss(fn_s)
+                except ArithmeticError:
+                    print("\t\tFailed to guess.")
                     pass
                 else:
-                    print("\tTheorem 6!:")
-                    print("\tNonhomogeneous solution:")
-                    print("\t\t{}".format(general_nonhomo))
-                    print("\tParticular solution:")
-                    print("\t\t{}".format(particular_solution))
                     solved = True
 
-            if not solved:
-                # Alright, lets try guessing now
-                try:
-                    particular_solution = self.solve_guess()
-                except ArithmeticError as e:
-                    print("\tFailed guesses.")
-                    pass
-                else:
-                    print("\tGuessed!:")
-                    print("\tParticular solution:")
-                    print("\t\t{}".format(particular_solution))
-                    solved = True
-
-            if not solved:
-                retry = ""
-                while retry not in ["n", "NO", "no", "nO", "No"]:
-                    # Last try, letting the user decide how to split the fn's
-                    try:
-                        general_nonhomo, t = self.general_nonhomo_sequence(
-                            facts, True)
-                        particular_solution = self.solve_theorem_6(general_nonhomo, t)
-                    except ArithmeticError as e:
-                        print("\tFailed attempt 3 of theorem 6.")
-                        pass
-                    else:
-                        print("\tTheorem 6!:")
-                        print("\tNonhomogeneous solution:")
-                        print("\t\t{}".format(general_nonhomo))
-                        print("\tParticular solution:")
-                        print("\t\t{}".format(particular_solution))
-                        solved = True
-                    retry = input("\t Would you like to try again?")
-
-            if solved and particular_solution is not None:
-                solution = homogeneous + particular_solution
+            if solved and solution is not None:
+                solution = homogeneous + solution
                 alphas = self.solve_alphas(solution)
                 solution = self.sub_alphas(solution, alphas)
 
                 print("\tGeneral nonhomogeneous solution:")
                 print("\t\t{}".format(solution))
 
+                self.solution = solution
                 return solution
             raise ArithmeticError("No solution found.")
 
-    def solve_guess(self):
+    def solve_guesss(self, fn_s):
         s = Function("s")
         n = symbols("n")
 
         homo = s(n) - Add(*self.homo)
-        fn = Add(*self.nonhomo)
+        particulars = []
 
-        solution = None
-        pees = {}
-        p_count = 0
-        solved = False
+        for fn in fn_s:
+            form, p_count = self.guess_exponential(homo, fn)
+            if form is None:
+                form, p_count = self.guess_polynomial(homo, fn)
+            if form is None:
+                # Now what lol.
+                raise ArithmeticError("No solution found.")
+            else:
+                if type(form) == Rational:
+                    particulars.append(form)
+                else:
+                    recurrence = homo - fn
+                    particular = self.insert_particular_solution(
+                        recurrence, form, p_count)
+                    particulars.append(particular)
 
-        queue = []
-        for inhomo in self.nonhomo:
-            if type(inhomo) == Pow:
-                base = inhomo.args[0]
-                if type(base) == Integer:
-                    queue.append(base)
+        solution = S.Zero
+        for particular in particulars:
+            solution = solution + particular
+        return solution
 
-        # Educated guesses
-        for guess in queue:
-            if solved:
-                break
+    def guess_exponential(self, homogeneous, fn):
+        s = Function("s")
+        n = symbols("n")
 
-            p0 = symbols("p0")
-            exponential = p0 * guess**n
-            g = lambdify(n, exponential)
-            a = Wild("a")
-            eq = homo.replace(s(a), g(a))
+        p0, p1, p2 = symbols("p0 p1 p2")
+        exponential = p2 * p1**n + p0
+        g = lambdify(n, exponential)
+        a = Wild("a")
+        eq = homogeneous.replace(s(a), g(a))
 
-            result = solve(Eq(eq, fn), p0, exclude=[n])
+        result = solve(Eq(eq, fn), (p0, p1, p2))
+        if type(result) == dict:
+            p_count = 3
+            solution = exponential
 
-            if type(result) == list:
-                print("Educated exponential guess!")
-                solved = True
-                solution = exponential
-                pees[p0] = result[0]
-                p_count = 1
-
-        if not solved:
-            # Guess exponential global
-            p0, p1, p2 = symbols("p0 p1 p2")
-            exponential = p2 * p1**n + p0
-            g = lambdify(n, exponential)
-            a = Wild("a")
-            eq = homo.replace(s(a), g(a))
-
-            result = solve(Eq(eq, fn), (p0, p1, p2))
-
-            if type(result) == dict:
-                print("Exponential guess!")
-                solved = True
-                solution = exponential
-                pees = result
-                p_count = 3
-
-        # Try polynomial guesses
-        if not solved:
-            degree = 1
-            result = None
-            guess = None
-            while degree < 10 and solved is False:
-                print("\tGuessing with degree {}...".format(degree))
-                guess = self.create_polynomial_function(degree)
-
-                g = lambdify(n, guess)
-                a = Wild("a")
-                eq = homo.replace(s(a), g(a))
-
-                p_str = ""
-                i = 0
-                while i <= degree:
-                    p_str = p_str + "p{} ".format(i)
-                    i = i + 1
-
-                p = symbols(p_str)
-
-                result = solve(Eq(eq, fn), p)
-
-                if type(result) == dict:
-                    print("Polynomial guess!")
-                    solved = True
-                degree = degree + 1
-            solution = guess
-            pees = result
-            p_count = degree - 1
-
-        if solved:
             i = 0
             while i <= p_count:
                 p = symbols("p{}".format(i))
-                if p in pees:
-                    solution = solution.replace(p, pees[p])
+                if p in result:
+                    solution = solution.replace(p, result[p])
                 else:
                     solution = solution.replace(p, 0)
                 i = i + 1
-            return solution
-        else:
-            raise ArithmeticError("No solution found")
 
-    def solve_theorem_6(self, general_nonhomo, p_count):
+            return solution, p_count
+        else:
+            return None, 0
+
+    def guess_polynomial(self, homogeneous, fn):
+        s = Function("s")
+        n = symbols("n")
+
+        degree = 1
+        result = None
+        guess = None
+        solved = False
+        while degree < 10 and solved is False:
+            print("\tGuessing with degree {}...".format(degree))
+            guess = self.create_polynomial_function(degree)
+
+            g = lambdify(n, guess)
+            a = Wild("a")
+            eq = homogeneous.replace(s(a), g(a))
+
+            p_str = ""
+            i = 0
+            while i <= degree:
+                p_str = p_str + "p{} ".format(i)
+                i = i + 1
+
+            p = symbols(p_str)
+
+            result = solve(Eq(eq, fn), p)
+
+            if type(result) == dict:
+                print("\tPolynomial guess!")
+                solved = True
+            degree = degree + 1
+        if solved:
+            p_count = degree - 1
+            solution = guess
+
+            i = 0
+            while i <= p_count:
+                p = symbols("p{}".format(i))
+                if p in result:
+                    solution = solution.replace(p, result[p])
+                else:
+                    solution = solution.replace(p, 0)
+                i = i + 1
+
+            return solution, p_count
+        else:
+            return None, None, 0
+
+    def solve_theorem6(self, fn_s, facts):
+        s = Function("s")
+        n = symbols("n")
+
+        particulars = []
+
+        for fn in fn_s:
+            form, p_count = self.get_particular_form(fn, facts)
+
+            recurrence = s(n) - Add(*self.homo, fn)
+            if form is not None:
+                solution = self.insert_particular_solution(
+                    recurrence, form, p_count)
+
+                if solution is not None:
+                    particulars.append(solution)
+
+        solution = S.Zero
+        for particular in particulars:
+            solution = solution + particular
+        return solution
+
+    def insert_particular_solution(self, recurrence, form, p_count):
         a = Wild("a")
         s = Function("s")
         n = symbols("n")
 
-        if general_nonhomo is not None:
-            # Lets try theorem 6
-            particular = lambdify(n, general_nonhomo)
+        # Lambdify the form so we can substitute it.
+        particular = lambdify(n, form)
+        # Substitute the form into the recurrence
+        inserted = recurrence.replace(s(a), particular(a))
+        inserted = factor(inserted)
 
-            recurrence = s(n) - Add(*self.homo, *self.nonhomo)
+        # Now build the variable symbols
+        i = 0
+        pees_str = ""
+        while i < p_count:
+            pees_str = pees_str + "p" + str(i) + " "
+            i = i + 1
+        pees_s = symbols(pees_str)
 
-            inserted = recurrence.replace(s(a), particular(a))
-            inserted = factor(inserted)
+        # Now try to solve the recurrence with our form substituted in,
+        # For every variable in the form except n.
+        if type(pees_s) == Symbol:
+            result = solve(inserted, pees_s)
+        else:
+            result = solve(inserted, *pees_s)
+
+        if type(result) == dict:
+            pees = result
+            solution = form
+
+            for pee in pees:
+                solution = solution.replace(pee, pees[pee])
+
+            # Woo, it worked
+            return simplify(solution)
+        elif type(result) == list:
+            solution = form
 
             i = 0
-            pees_str = ""
             while i < p_count:
-                pees_str = pees_str + "p" + str(i) + " "
+                p = symbols("p{}".format(i))
+                solution = solution.replace(p, result[i])
                 i = i + 1
-
-            pees_s = symbols(pees_str)
-            if type(pees_s) == Symbol:
-                result = solve(inserted, pees_s)
-            else:
-                result = solve(inserted, *pees_s)
-
-            if type(result) == dict:
-                pees = result
-                solution = general_nonhomo
-
-                for pee in pees:
-                    solution = solution.replace(pee, pees[pee])
-
-                # Woo, it worked
-                return simplify(solution)
-            else:
-                raise ArithmeticError("No solution found.")
+            print("Caution: assumed list type, with result[0] is a correct result. You should check if there is no n variable in this.")
+            return simplify(solution)
         else:
-            raise RuntimeError("No general nonhomogeneous sequence given.")
+            raise ArithmeticError("No solution found.")
+
+    def get_linear_parts_fn(self, ask, split):
+        terms = self.nonhomo[:]
+        parts = []
+
+        if ask:
+            while len(terms) > 0:
+                first = terms.pop()
+                print("\tAssembling Fn part 1 ({}):".format(first))
+
+                part_list = []
+                for term in terms:
+                    yes = input("\t\tIs {} part of this group? [Y/n]:".format(term))
+                    if yes in ["", "y", "yes", "YES"]:
+                        part_list.append(term)
+
+                part = first
+                for p in part_list:
+                    terms.pop(terms.index(p))
+                    part = part + p
+
+                parts.append(part)
+        elif not split:
+            parts = [Add(*self.nonhomo)]
+        else:
+            parts = self.nonhomo[:]
+        return parts
+
+    def get_particular_form(self, fn, facts):
+        # Assuming each part is a polynomial.
+        n = symbols("n")
+        p_count = 0
+
+        if type(fn) == Integer:
+            solution, p_count = self.b_integer(fn, p_count, facts)
+            return solution, p_count
+        else:
+            try:
+                b = Poly(fn)
+            except Exception as e:
+                # It's not a polynomial, use s = 1
+                # solution, p_count = self.b_poly(
+                #     1, solution, part, p_count, facts)
+                pass
+                solution = None
+                p_count = 0
+                return solution, p_count
+            else:
+                a = Wild("a")
+                if b.gen == n:
+                    # We have a polynomial with generator n.
+                    solution, p_count = self.b_poly(
+                        1, Poly(b, 1**n), p_count, facts)
+                    return solution, p_count
+                elif type(b.gen) == Pow and b.gen.args[1] == n:
+                    # We have a polynomial with generator s^n.
+                    s = b.gen.args[0]
+                    solution, p_count = self.b_poly(
+                        s, fn, p_count, facts)
+                    return solution, p_count
+                else:
+                    # ahh fuck it, try this.
+                    raise Exception("Unresolved case.")
 
     def create_polynomial_function(self, degree):
         n = symbols("n")
@@ -310,7 +365,7 @@ class Recurrence:
                 return mp
         return None
 
-    def b_integer(self, solution, part, p_count, facts):
+    def b_integer(self, part, p_count, facts):
         n = symbols("n")
         if type(part) == Integer:
             # p0 * (1)^n == p0 if the term is an integer.
@@ -324,21 +379,29 @@ class Recurrence:
             if m is not None:
                 trm = n**m * trm
             p_count = p_count + 1
-            solution = solution + trm
+            solution = trm
             return solution, p_count
 
-    def b_poly(self, s, solution, part, p_count, facts):
+    def b_poly(self, s, part, p_count, facts):
         n = symbols("n")
         poly = Poly(part)
-        monomial, coeff = poly.LT()
-        # p = symbols("p{}".format(p_count))
-        # p_count = p_count + 1
-        trm = S.Zero
 
+        terms = poly.terms()
+        t = []
+        for exp, term in terms:
+            t.append(term)
+
+        b = Poly(*t, n)
+
+        p = symbols("p{}".format(p_count))
+        p_count = p_count + 1
+        trm = p
+
+        monomial, coeff = b.LT()
         t = monomial.exponents[0]
 
         i = t
-        while i >= 0:
+        while i > 0:
             p = symbols("p{}".format(p_count))
             trm = trm + p * n ** i
             p_count = p_count + 1
@@ -350,7 +413,7 @@ class Recurrence:
         if m is not None:
             trm = n**m * trm
 
-        solution = solution + trm * s**n
+        solution = trm * s**n
         return solution, p_count
 
     def general_nonhomo_sequence(self, facts, ask=False, split=True):
@@ -392,7 +455,7 @@ class Recurrence:
 
             if type(part) == Integer:
                 solution, p_count = self.b_integer(
-                    solution, part, p_count, facts)
+                    part, p_count, facts)
             else:
                 try:
                     b = Poly(part)
@@ -408,12 +471,12 @@ class Recurrence:
                     if b.gen == n:
                         # We have a polynomial with generator n.
                         solution, p_count = self.b_poly(
-                            1, solution, part, p_count, facts)
+                            1, poly, p_count, facts)
                     elif type(b.gen) == Pow and b.gen.args[1] == n:
                         # We have a polynomial with generator s^n.
                         s = b.gen.args[0]
                         solution, p_count = self.b_poly(
-                            s, solution, part, p_count, facts)
+                            s, part, p_count, facts)
                     else:
                         # ahh fuck it, try this.
                         raise Exception("Unresolved case.")
